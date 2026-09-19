@@ -3,51 +3,53 @@ name: Auto Patch & Build APK/IPA
 on:
   schedule:
     - cron: '0 0 * * *' # 每天早 8 点自动运行
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   build:
-    runs-on: macos-latest # 使用 macOS 环境编译 IPA 和 APK
+    runs-on: macos-latest
 
     steps:
-      # 1. 拉取官方最新代码
+      # 1. 拉取 Animeko 官方最新代码
       - name: Checkout Code from Official Repo
         uses: actions/checkout@v4
         with:
           repository: 'open-ani/animeko'
           fetch-depth: 0
 
-      # 2. 自动把 LucasChan02 的去广告提交打补丁进来！(关键步骤：免手动修改代码)
+      # 2. 自动打去广告补丁（针对冲突做了自动容错处理）
       - name: Apply No-Ads Patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add patch_src https://github.com/LucasChan02/animeko.git
           git fetch patch_src
-          # 强行合并对方的去广告提交
-          git cherry-pick 391936795812373f1301e94b7a9e1e186dcd456b || true
+          # 尝试打入去广告的 commit，如果遇到代码冲突则自动跳过冲突直接提交
+          git cherry-pick --strategy-option=theirs 391936795812373f1301e94b7a9e1e186dcd456b || true
 
-      # 3. 配置 Flutter 环境
+      # 3. 配置 Java 环境（已更新至 v4，解决 setup-java 废弃警告）
       - name: Set up Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
+      # 4. 配置 Flutter 环境
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
+      # 5. 安装项目依赖
       - name: Install Dependencies
         run: flutter pub get
 
-      # 4. 编译 Android APK
+      # 6. 编译 Android APK
       - name: Build Android APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      # 5. 编译 iOS 无签名 IPA (供巨魔/AltStore/轻松签安装)
+      # 7. 编译 iOS 无签名 IPA (供巨魔/AltStore/轻松签安装)
       - name: Build iOS IPA
         run: |
           flutter build ios --release --no-codesign
@@ -56,7 +58,7 @@ jobs:
           mv Runner.app Payload/
           zip -r Animeko_NoAds.ipa Payload
 
-      # 6. 上传 APK 和 IPA 文件供你下载
+      # 8. 上传构建产物
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
