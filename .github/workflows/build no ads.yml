@@ -1,75 +1,57 @@
-name: Auto Patch & Build APK/IPA
+name: Auto Patch & Build APK
 
 on:
   schedule:
     - cron: '0 0 * * *' # 每天早 8 点自动运行
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch: # 支持手动点 Run
 
 jobs:
-  build:
-    runs-on: macos-latest
+  build-android:
+    runs-on: ubuntu-latest
 
     steps:
       # 1. 拉取 Animeko 官方最新代码
-      - name: Checkout Code from Official Repo
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           repository: 'open-ani/animeko'
           fetch-depth: 0
 
-      # 2. 自动打去广告补丁（针对冲突做了自动容错处理）
+      # 2. 打入去广告补丁
       - name: Apply No-Ads Patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add patch_src https://github.com/LucasChan02/animeko.git
           git fetch patch_src
-          # 尝试打入去广告的 commit，如果遇到代码冲突则自动跳过冲突直接提交
           git cherry-pick --strategy-option=theirs 391936795812373f1301e94b7a9e1e186dcd456b || true
 
-      # 3. 配置 Java 环境（已更新至 v4，解决 setup-java 废弃警告）
-      - name: Set up Java
+      # 3. 设置 Java 环境（JDK 17）
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
 
-      # 4. 配置 Flutter 环境
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
+      # 4. 配置 Gradle 缓存以加速编译
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      # 5. 安装项目依赖
-      - name: Install Dependencies
-        run: flutter pub get
-
-      # 6. 编译 Android APK
+      # 5. 赋予 gradlew 执行权限并编译 Android Release APK
       - name: Build Android APK
-        run: flutter build apk --release --no-tree-shake-icons
-
-      # 7. 编译 iOS 无签名 IPA (供巨魔/AltStore/轻松签安装)
-      - name: Build iOS IPA
         run: |
-          flutter build ios --release --no-codesign
-          cd build/ios/iphoneos
-          mkdir -p Payload
-          mv Runner.app Payload/
-          zip -r Animeko_NoAds.ipa Payload
+          chmod +x ./gradlew
+          ./gradlew :androidApp:assembleRelease --stacktrace
 
-      # 8. 上传构建产物
-      - name: Upload Android APK
+      # 6. 上传打包好的去广告 APK 供下载
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Animeko-Android-NoAds
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            androidApp/build/outputs/apk/release/*.apk
+            **/build/outputs/apk/release/*.apk
 
-      - name: Upload iOS IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: Animeko-iOS-NoAds
-          path: build/ios/iphoneos/Animeko_NoAds.ipa
 
         uses: actions/upload-artifact@v4
         with:
